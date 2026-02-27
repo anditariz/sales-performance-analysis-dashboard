@@ -1,0 +1,177 @@
+-- Melakukan data cleaning
+-- cek apakah ada duplikat
+SELECT 'product_data'         AS tabel, COUNT(*) - COUNT(DISTINCT ProdNumber)  AS jumlah_duplikat FROM `da-2025-481513.pbi.product_data`
+    UNION ALL
+    SELECT 'customers_data'       AS tabel, COUNT(*) - COUNT(DISTINCT CustomerID)  AS jumlah_duplikat FROM `da-2025-481513.pbi.customers_data`
+    UNION ALL
+    SELECT 'orders_data'          AS tabel, COUNT(*) - COUNT(DISTINCT OrderID)     AS jumlah_duplikat FROM `da-2025-481513.pbi.orders_data`
+    UNION ALL
+    SELECT 'productCategory_data' AS tabel, COUNT(*) - COUNT(DISTINCT CategoryID)  AS jumlah_duplikat FROM `da-2025-481513.pbi.productCategory_data`;
+
+-- cek apakah ada data null
+SELECT 'product_data'  AS tabel,
+    COUNTIF(ProdNumber IS NULL) AS null_ProdNumber,
+    COUNTIF(ProdName   IS NULL) AS null_ProdName,
+    COUNTIF(Price      IS NULL) AS null_Price
+FROM `da-2025-481513.pbi.product_data`
+  UNION ALL
+  SELECT 'customers_data' AS tabel,
+    COUNTIF(CustomerID    IS NULL) AS null_CustomerID,
+    COUNTIF(CustomerEmail IS NULL) AS null_CustomerEmail,
+    COUNTIF(CustomerCity  IS NULL) AS null_CustomerCity
+FROM `da-2025-481513.pbi.customers_data`;
+
+-- cek penulisan email 
+SELECT CustomerID, CustomerEmail
+  FROM `da-2025-481513.pbi.customers_data`
+  WHERE CustomerEmail LIKE '%#%'
+  LIMIT 5;
+
+-- cek price 
+SELECT
+  MIN(Price)        AS harga_minimum,
+  MAX(Price)        AS harga_maksimum,
+  MIN(Price / 100)  AS harga_minimum_fix,
+  MAX(Price / 100)  AS harga_maksimum_fix
+FROM `da-2025-481513.pbi.product_data`;
+
+-- SOAL NOMOR 1
+-- Menentukan Primary Key
+select * from `pbi.product_data`;
+-- ALTER TABLE pbi.product_data
+-- ADD PRIMARY KEY (ProdNumber) NOT ENFORCED;
+
+select * from `pbi.customers_data`;
+-- ALTER TABLE pbi.customers_data
+-- ADD PRIMARY KEY (CustomerID) NOT ENFORCED;
+
+select * from `pbi.orders_data`;
+-- ALTER TABLE pbi.orders_data
+-- ADD PRIMARY KEY (OrderID) NOT ENFORCED;
+
+select * from `pbi.productCategory_data`;
+-- ALTER TABLE pbi.productCategory_data
+-- ADD PRIMARY KEY (CategoryID) NOT ENFORCED;
+
+-- SOAL NOMOR 3
+WITH ranked AS (
+  SELECT
+    o.Date                       AS order_date,
+    pc.CategoryID,
+    pc.CategoryName              AS category_name,
+    p.ProdName                   AS product_name,
+    p.Price / 100                AS product_price,
+    o.Quantity                   AS order_qty,
+    (o.Quantity * p.Price / 100) AS total_sales,
+    c.CustomerEmail              AS cust_email,
+    c.CustomerCity               AS cust_city,
+    ROW_NUMBER() OVER (
+      PARTITION BY o.Date, pc.CategoryID
+      ORDER BY o.OrderID ASC  -- ambil transaksi pertama per kategori per tanggal
+    ) AS rn
+  FROM
+    `da-2025-481513.pbi.orders_data` o
+  JOIN
+    `da-2025-481513.pbi.customers_data` c
+    ON o.CustomerID = c.CustomerID
+  JOIN
+    `da-2025-481513.pbi.product_data` p
+    ON o.ProdNumber = p.ProdNumber
+  JOIN
+    `da-2025-481513.pbi.productCategory_data` pc
+    ON p.Category = pc.CategoryID
+)
+
+SELECT
+  order_date,
+  category_name,
+  product_name,
+  product_price,
+  order_qty,
+  total_sales,
+  cust_email,
+  cust_city
+FROM ranked
+WHERE rn = 1
+ORDER BY
+  order_date ASC,
+  CategoryID ASC;
+
+-- SOAL NOMOR 4
+-- Total Sales
+SELECT
+  ROUND(SUM(o.Quantity * p.Price / 100), 2) AS total_sales
+    FROM `da-2025-481513.pbi.orders_data` o
+    JOIN `da-2025-481513.pbi.product_data` p
+      ON o.ProdNumber = p.ProdNumber
+WHERE o.Quantity > 0 AND p.Price > 0;
+
+-- Total Sales By Category Product
+SELECT
+  pc.CategoryName AS category_name,
+  ROUND(SUM(o.Quantity * p.Price / 100), 2) AS total_sales
+FROM `da-2025-481513.pbi.orders_data` o
+JOIN `da-2025-481513.pbi.product_data` p ON o.ProdNumber = p.ProdNumber
+JOIN `da-2025-481513.pbi.productCategory_data` pc ON p.Category = pc.CategoryID
+WHERE o.Quantity > 0 AND p.Price > 0
+GROUP BY category_name
+ORDER BY total_sales DESC;
+
+-- Total Qty by Category Product
+SELECT
+  pc.CategoryName AS category_name,
+  SUM(o.Quantity) AS total_qty
+FROM `da-2025-481513.pbi.orders_data` o
+JOIN `da-2025-481513.pbi.product_data` p ON o.ProdNumber = p.ProdNumber
+JOIN `da-2025-481513.pbi.productCategory_data` pc ON p.Category = pc.CategoryID
+WHERE o.Quantity > 0
+GROUP BY category_name
+ORDER BY total_qty DESC;
+
+-- Total Sales by City
+SELECT
+  INITCAP(TRIM(c.CustomerCity)) AS cust_city,
+  ROUND(SUM(o.Quantity * p.Price / 100), 2) AS total_sales
+FROM `da-2025-481513.pbi.orders_data` o
+JOIN `da-2025-481513.pbi.product_data` p ON o.ProdNumber = p.ProdNumber
+JOIN `da-2025-481513.pbi.customers_data` c ON o.CustomerID = c.CustomerID
+WHERE o.Quantity > 0 AND p.Price > 0 AND c.CustomerCity IS NOT NULL
+GROUP BY cust_city
+ORDER BY total_sales DESC;
+
+-- Total Qty by City
+SELECT
+  INITCAP(TRIM(c.CustomerCity)) AS cust_city,
+  SUM(o.Quantity) AS total_qty
+FROM `da-2025-481513.pbi.orders_data` o
+JOIN `da-2025-481513.pbi.customers_data` c ON o.CustomerID = c.CustomerID
+WHERE o.Quantity > 0 AND c.CustomerCity IS NOT NULL
+GROUP BY cust_city
+ORDER BY total_qty DESC;
+
+-- Top 5 Category Product by Sales 
+SELECT
+  pc.CategoryName AS category_name,
+  ROUND(SUM(o.Quantity * p.Price / 100), 2) AS total_sales
+FROM `da-2025-481513.pbi.orders_data` o
+JOIN `da-2025-481513.pbi.product_data` p ON o.ProdNumber = p.ProdNumber
+JOIN `da-2025-481513.pbi.productCategory_data` pc ON p.Category = pc.CategoryID
+WHERE o.Quantity > 0 AND p.Price > 0
+GROUP BY category_name
+ORDER BY total_sales DESC
+LIMIT 5;
+
+-- Top 5 Category Product by Qty
+SELECT
+  pc.CategoryName AS category_name,
+  SUM(o.Quantity) AS total_qty
+FROM `da-2025-481513.pbi.orders_data` o
+JOIN `da-2025-481513.pbi.product_data` p ON o.ProdNumber = p.ProdNumber
+JOIN `da-2025-481513.pbi.productCategory_data` pc ON p.Category = pc.CategoryID
+WHERE o.Quantity > 0
+GROUP BY category_name
+ORDER BY total_qty DESC
+LIMIT 5;
+
+
+
